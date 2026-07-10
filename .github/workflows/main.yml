@@ -11,11 +11,11 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/torvalds/linux.git
           cd linux
-          cp ../.config .config
+          cp ../my_dell_config .config
           make olddefconfig
           make -j$(nproc)
       - name: Upload Kernel
         uses: actions/upload-artifact@v3
         with:
           name: kernel-binary
-          path: arch/x86/boot/bzImage
+          path: linux/arch/x86/boot/bzImage
