@@ -1,23 +1,58 @@
-name: Build Kernel
-on: [push]
+name: Build Custom Monolithic Kernel
+
+on:
+  push:
+    branches: [ main ]
+
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential libncurses-dev bison flex libssl-dev libelf-dev bc
-      - name: Build Kernel
-        run: |
-          git clone --depth 1 https://github.com/torvalds/linux.git
-          cd linux
-          cp ../my_dell_config .config
-          make olddefconfig
-          make -j$(nproc)
-      - name: Upload Kernel
-        uses: actions/upload-artifact@v4
-        with:
-          name: kernel-binary
-          path: linux/arch/x86/boot/bzImage
+    - name: Checkout Source Code
+      uses: actions/checkout@v3
+
+    - name: Install Build Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential libncurses-dev bison flex libssl-dev libelf-dev bc git
+
+    - name: Fetch Linux Kernel Source
+      run: |
+        # تحميل نفس إصدار الكيرنل المستهدف (7.0.12)
+        curl -L https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.0.12.tar.xz | tar -xJ --strip-components=1
+
+    - name: Configure Custom Monolithic Kernel
+      run: |
+        # 1. توليد ملف إعدادات افتراضي كأساس نظيف
+        make defconfig
+        
+        # 2. قراءة ملف موديولات جهازك وحقنها برمجياً كـ Built-in (=y)
+        while read -r module; do
+          if [ ! -z "$module" ]; then
+            # تحويل اسم الموديول للصيغة القياسية في الـ config (حروف كبيرة واستبدال الشرطات بشرطات سفلية)
+            CONFIG_NAME="CONFIG_$(echo "$module" | tr '[:lower:]' '[:upper:]' | tr '-' '_')"
+            ./scripts/config --enable "$CONFIG_NAME"
+          fi
+        done < my_laptop_modules.txt
+        
+        # 3. التأكيد الصارم والقطعي على دمج مشغلات الأقراص والـ NVMe ونظام الملفات لتخطي الـ initrd
+        ./scripts/config --enable CONFIG_BLK_DEV_NVME
+        ./scripts/config --enable CONFIG_NVME_CORE
+        ./scripts/config --enable CONFIG_EXT4_FS
+        ./scripts/config --enable CONFIG_BLK_DEV_SD
+        ./scripts/config --enable CONFIG_PCI
+        
+        # 4. معالجة وحل أي تعارضات في الخيارات تلقائياً وسد الثغرات المفقودة
+        make olddefconfig
+
+    - name: Compile Monolithic Kernel
+      run: |
+        # بدء عملية التجميع الفعلي للنواة المدمجة الصافية
+        make -j$(nproc) bzImage
+
+    - name: Upload Custom Kernel Binary
+      uses: actions/upload-artifact@v3
+      with:
+        name: custom-dell-kernel
+        path: arch/x86/boot/bzImage
